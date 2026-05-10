@@ -1,4 +1,5 @@
 import sys
+import os
 
 # PyInstaller 兼容性：必须在导入其他模块之前执行
 if getattr(sys, 'frozen', False):
@@ -34,6 +35,8 @@ if getattr(sys, 'frozen', False):
 
 from uvicorn import run
 from main import app
- 
+  
 if __name__ == "__main__":
-	run(app, host="0.0.0.0", port=54321, log_level="info") 
+    host = os.getenv("NOVELFORGE_BACKEND_HOST", "0.0.0.0")
+    port = int(os.getenv("NOVELFORGE_BACKEND_PORT", "54321"))
+    run(app, host=host, port=port, log_level="info")

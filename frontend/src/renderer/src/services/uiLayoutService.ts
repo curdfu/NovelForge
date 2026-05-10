@@ -1,3 +1,5 @@
+import { containsCjk, getFieldDisplayTitle } from '@renderer/utils/fieldDisplay'
+
 export interface SectionConfig {
   title: string
   include?: string[]
@@ -7,7 +9,7 @@ export interface SectionConfig {
 }
 
 interface LayoutSources {
-  schemaMeta?: Record<string, any>
+  schemaMeta?: Record<string, unknown>
   backendLayout?: SectionConfig[] | undefined
   frontendDefault?: SectionConfig[] | undefined
 }
@@ -22,17 +24,20 @@ export function mergeSections(sources: LayoutSources): SectionConfig[] | undefin
   return undefined
 }
 
-function normalizeSections(sections: any[], schemaLike?: any): SectionConfig[] {
-  return sections.map(s => ({
-    title: normalizeSectionTitle(String(s.title ?? '分区'), s.include, schemaLike),
-    include: s.include ? [...s.include] : undefined,
-    exclude: s.exclude ? [...s.exclude] : undefined,
-    description: s.description,
-    collapsed: !!s.collapsed,
-  }))
+function normalizeSections(sections: unknown[], schemaLike?: Record<string, unknown>): SectionConfig[] {
+  return sections.map((s) => {
+    const source = asRecord(s)
+    return {
+      title: normalizeSectionTitle(String(source.title ?? '分区'), source.include, schemaLike),
+      include: Array.isArray(source.include) ? source.include.map(String) : undefined,
+      exclude: Array.isArray(source.exclude) ? source.exclude.map(String) : undefined,
+      description: typeof source.description === 'string' ? source.description : undefined,
+      collapsed: !!source.collapsed,
+    }
+  })
 }
 
-function normalizeSectionTitle(rawTitle: string, include: any, schemaLike?: any): string {
+function normalizeSectionTitle(rawTitle: string, include: unknown, schemaLike?: Record<string, unknown>): string {
   const title = (rawTitle || '').trim()
   const includeKeys = Array.isArray(include) ? include : []
   if (includeKeys.length !== 1) return title || '分区'
@@ -47,8 +52,8 @@ function normalizeSectionTitle(rawTitle: string, include: any, schemaLike?: any)
   return title
 }
 
-export function autoGroup(schema: any): SectionConfig[] {
-  const props: Record<string, any> = schema?.properties || {}
+export function autoGroup(schema: unknown): SectionConfig[] {
+  const props = asRecord(asRecord(schema).properties)
   const keys = Object.keys(props)
   const objectKeys = keys.filter(k => resolveType(props[k]) === 'object')
   const arrayKeys = keys.filter(k => resolveType(props[k]) === 'array')
@@ -61,29 +66,40 @@ export function autoGroup(schema: any): SectionConfig[] {
   return sections
 }
 
-function resolveSectionTitle(schema: any, key: string): string {
-  const fieldSchema = schema?.properties?.[key]
-  const directTitle = typeof fieldSchema?.title === 'string' ? fieldSchema.title.trim() : ''
-  if (directTitle) return directTitle
+function resolveSectionTitle(schema: unknown, key: string): string {
+  const fieldSchema = asRecord(asRecord(schema).properties)[key]
+  const fieldRecord = asRecord(fieldSchema)
+  const directTitle = typeof fieldRecord.title === 'string' ? fieldRecord.title.trim() : ''
+  if (containsCjk(directTitle)) return directTitle
 
-  const ref = typeof fieldSchema?.$ref === 'string' ? fieldSchema.$ref : ''
+  const ref = typeof fieldRecord.$ref === 'string' ? fieldRecord.$ref : ''
   if (ref.startsWith('#/$defs/')) {
     const refName = ref.split('/').pop() || ''
-    const refTitle = typeof schema?.$defs?.[refName]?.title === 'string'
-      ? schema.$defs[refName].title.trim()
+    const refSchema = asRecord(asRecord(asRecord(schema).$defs)[refName])
+    const refTitle = typeof refSchema.title === 'string'
+      ? refSchema.title.trim()
       : ''
-    if (refTitle) return refTitle
+    if (containsCjk(refTitle)) return refTitle
   }
 
-  return key
+  return getFieldDisplayTitle(key, fieldSchema)
 }
 
-function resolveType(s: any): string {
-  if (!s) return 'object'
-  if (s.anyOf) {
-    const first = s.anyOf.find((x: any) => x && x.type && x.type !== 'null')
-    if (first) return first.type
+function resolveType(s: unknown): string {
+  const schema = asRecord(s)
+  if (!Object.keys(schema).length) return 'object'
+  if (Array.isArray(schema.anyOf)) {
+    const first = schema.anyOf.find((x) => {
+      const item = asRecord(x)
+      return item.type && item.type !== 'null'
+    })
+    const firstType = asRecord(first).type
+    if (typeof firstType === 'string') return firstType
   }
-  if (s.$ref) return 'object'
-  return s.type || 'object'
-} 
+  if (schema.$ref) return 'object'
+  return typeof schema.type === 'string' ? schema.type : 'object'
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}

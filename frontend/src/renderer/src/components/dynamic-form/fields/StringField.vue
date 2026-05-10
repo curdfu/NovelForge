@@ -9,11 +9,12 @@
     />
     <el-input
       v-else
+      class="long-text-input"
       type="textarea"
       :model-value="modelValue"
       @update:modelValue="emit('update:modelValue', $event)"
       :placeholder="placeholder"
-      :autosize="{ minRows: 3, maxRows: 10 }"
+      :autosize="{ minRows: 4, maxRows: 18 }"
       clearable
     />
   </el-form-item>
@@ -32,23 +33,45 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue'])
 
-// 一个简单的启发式方法：如果描述或标题表明它是一个长文本字段，则使用文本区域。
-// 一个更健 robuste 解决方案可能是在 schema 中包含一个自定义属性，比如 `x-ui-control: 'textarea'`。
+// 一个简单的启发式方法：如果描述、标题、字段名或当前内容表明它是长文本，则使用文本区域。
 const isLongText = computed(() => {
-  // 新增规则：如果 schema 中定义了 minLength 且大于 50，则视为长文本。
   if (props.schema.minLength !== undefined && props.schema.minLength > 50) {
+    return true
+  }
+  const currentValue = String(props.modelValue || '')
+  if (currentValue.length > 80 || currentValue.includes('\n')) {
     return true
   }
   const description = props.schema.description?.toLowerCase() || ''
   const title = props.schema.title?.toLowerCase() || ''
-  // 如果字段名为overview，强制用textarea
-  if (props.prop === 'overview'||props.prop==='content') return true
+  const prop = props.prop.toLowerCase()
+  if (
+    prop === 'overview'
+    || prop === 'content'
+    || prop.includes('description')
+    || prop.includes('thinking')
+    || prop.includes('summary')
+    || prop.includes('analysis')
+    || prop.includes('background')
+    || prop.includes('relationship')
+    || prop.includes('state')
+    || prop.includes('definition')
+    || prop.includes('hint')
+    || prop.includes('guide')
+    || prop.includes('note')
+  ) return true
   return (
     description.includes('思考') ||
     description.includes('过程') ||
     description.includes('描述') ||
     description.includes('概述') ||
-    title.includes('thinking')
+    description.includes('内容') ||
+    description.includes('状态') ||
+    description.includes('说明') ||
+    title.includes('thinking') ||
+    title.includes('描述') ||
+    title.includes('概述') ||
+    title.includes('内容')
   )
 })
 
@@ -56,3 +79,11 @@ const placeholder = computed(() => {
   return props.schema.description || `请输入 ${props.label}`
 })
 </script>
+
+<style scoped>
+.long-text-input :deep(.el-textarea__inner) {
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>

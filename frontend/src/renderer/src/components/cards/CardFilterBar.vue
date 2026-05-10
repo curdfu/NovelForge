@@ -28,16 +28,29 @@ import { ElInput, ElSelect, ElOption, ElSegmented, ElIcon } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import type { components } from '@renderer/types/generated'
 
-const props = defineProps<{ cardTypes: components['schemas']['CardTypeRead'][] }>()
+type SortKey = 'recent'|'title'|'type'
+type Density = '舒适'|'紧凑'
+type ViewMode = '卡片'|'列表'
+
+interface DisplaySettings {
+  sortKey: SortKey
+  density: Density
+  view: ViewMode
+}
+
+const props = defineProps<{
+  cardTypes: components['schemas']['CardTypeRead'][]
+  initialSettings?: Partial<DisplaySettings>
+}>()
 const emit = defineEmits<{
-  (e: 'change', payload: { keyword: string; types: number[]; sortKey: 'recent'|'title'|'type'; density: '舒适'|'紧凑'; view: '卡片'|'列表' }): void
+  (e: 'change', payload: { keyword: string; types: number[]; sortKey: SortKey; density: Density; view: ViewMode }): void
 }>()
 
 const keyword = ref('')
 const selectedTypes = ref<number[]>([])
-const sortKey = ref<'recent'|'title'|'type'>('recent')
-const density = ref<'舒适'|'紧凑'>('舒适')
-const viewMode = ref<'卡片'|'列表'>('卡片')
+const sortKey = ref<SortKey>(props.initialSettings?.sortKey ?? 'recent')
+const density = ref<Density>(props.initialSettings?.density ?? '舒适')
+const viewMode = ref<ViewMode>(props.initialSettings?.view ?? '卡片')
 
 const densityOptions = [ '舒适', '紧凑' ]
 const viewOptions = [ '卡片', '列表' ]

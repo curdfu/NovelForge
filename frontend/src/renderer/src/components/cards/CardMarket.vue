@@ -1,6 +1,6 @@
 <template>
   <div class="card-market">
-    <CardFilterBar :card-types="cardTypes" @change="handleFilterChange" />
+    <CardFilterBar :card-types="cardTypes" :initial-settings="initialDisplaySettings" @change="handleFilterChange" />
     <el-scrollbar>
       <div v-if="viewMode === '卡片'">
         <div v-if="filteredCards.length > 0" class="card-grid" :class="{ compact: density==='紧凑' }">
@@ -74,11 +74,66 @@ const emit = defineEmits<{ (e: 'edit-card', id: number): void }>()
 const cardStore = useCardStore()
 const { cards, cardTypes } = storeToRefs(cardStore)
 
+type SortKey = 'recent'|'title'|'type'
+type Density = '舒适'|'紧凑'
+type ViewMode = '卡片'|'列表'
+
+interface DisplaySettings {
+  sortKey: SortKey
+  density: Density
+  view: ViewMode
+}
+
+const DISPLAY_SETTINGS_KEY = 'novelforge.cardMarket.viewSettings'
+
+const defaultDisplaySettings: DisplaySettings = {
+  sortKey: 'recent',
+  density: '舒适',
+  view: '卡片'
+}
+
+function isSortKey(value: unknown): value is SortKey {
+  return value === 'recent' || value === 'title' || value === 'type'
+}
+
+function isDensity(value: unknown): value is Density {
+  return value === '舒适' || value === '紧凑'
+}
+
+function isViewMode(value: unknown): value is ViewMode {
+  return value === '卡片' || value === '列表'
+}
+
+function loadDisplaySettings(): DisplaySettings {
+  if (typeof window === 'undefined') return { ...defaultDisplaySettings }
+  try {
+    const raw = window.localStorage.getItem(DISPLAY_SETTINGS_KEY)
+    if (!raw) return { ...defaultDisplaySettings }
+    const parsed = JSON.parse(raw) as Partial<DisplaySettings>
+    return {
+      sortKey: isSortKey(parsed.sortKey) ? parsed.sortKey : defaultDisplaySettings.sortKey,
+      density: isDensity(parsed.density) ? parsed.density : defaultDisplaySettings.density,
+      view: isViewMode(parsed.view) ? parsed.view : defaultDisplaySettings.view
+    }
+  } catch {
+    return { ...defaultDisplaySettings }
+  }
+}
+
+function saveDisplaySettings(settings: DisplaySettings) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(settings))
+  } catch { }
+}
+
+const initialDisplaySettings = loadDisplaySettings()
+
 const keyword = ref('')
 const selectedTypes = ref<number[]>([])
-const sortKey = ref<'recent'|'title'|'type'>('recent')
-const density = ref<'舒适'|'紧凑'>('舒适')
-const viewMode = ref<'卡片'|'列表'>('卡片')
+const sortKey = ref<SortKey>(initialDisplaySettings.sortKey)
+const density = ref<Density>(initialDisplaySettings.density)
+const viewMode = ref<ViewMode>(initialDisplaySettings.view)
 
 const filteredCards = computed(() => {
   let list = [...cards.value]
@@ -104,12 +159,13 @@ const filteredCards = computed(() => {
   return list
 })
 
-function handleFilterChange(payload: { keyword: string; types: number[]; sortKey: 'recent'|'title'|'type'; density: '舒适'|'紧凑'; view: '卡片'|'列表' }) {
+function handleFilterChange(payload: { keyword: string; types: number[]; sortKey: SortKey; density: Density; view: ViewMode }) {
   keyword.value = payload.keyword
   selectedTypes.value = payload.types
   sortKey.value = payload.sortKey
   density.value = payload.density
   viewMode.value = payload.view
+  saveDisplaySettings({ sortKey: payload.sortKey, density: payload.density, view: payload.view })
 }
 
 function onEditCard(id: number) { emit('edit-card', id) }

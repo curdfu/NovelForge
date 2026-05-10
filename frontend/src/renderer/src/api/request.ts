@@ -1,6 +1,21 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { ElMessage, ElLoading } from 'element-plus'
 
+declare global {
+  interface Window {
+    __NOVELFORGE_CONFIG__?: {
+      backendBaseUrl?: string
+    }
+  }
+}
+
+const ABSOLUTE_URL_PATTERN = /^[a-z][a-z\d+.-]*:\/\//i
+
+function resolveRequestUrl(url?: string): string | undefined {
+  if (!url || !BASE_URL || ABSOLUTE_URL_PATTERN.test(url)) return url
+  return `${BASE_URL}${url.startsWith('/') ? url : `/${url}`}`
+}
+
 // 后端API的基础URL
 // 约定：
 //  - web 开发环境：使用同源 + Vite 代理（BASE_URL = ''，请求走 /api 前缀）
@@ -8,6 +23,14 @@ import { ElMessage, ElLoading } from 'element-plus'
 //  - Electron / 其他：默认 http://127.0.0.1:54321
 export const BASE_URL: string = (() => {
   const platform = import.meta.env.VITE_APP_PLATFORM
+  if (
+    typeof window !== 'undefined'
+    && window.__NOVELFORGE_CONFIG__
+    && typeof window.__NOVELFORGE_CONFIG__.backendBaseUrl === 'string'
+  ) {
+    return window.__NOVELFORGE_CONFIG__.backendBaseUrl.replace(/\/$/, '')
+  }
+
 
   if (platform === 'web') {
     if (import.meta.env.DEV) {
@@ -136,7 +159,10 @@ class HttpClient {
   }
 
   public request<T>(config: AxiosRequestConfig): Promise<T> {
-    return this.instance.request(config)
+    return this.instance.request({
+      ...config,
+      url: resolveRequestUrl(config.url)
+    })
   }
 
   public get<T>(url: string, params?: object, prefix: string = '/api', options?: { showLoading?: boolean, signal?: AbortSignal }): Promise<T> {
@@ -161,13 +187,15 @@ class HttpClient {
 }
 
 export default new HttpClient({
-  baseURL: BASE_URL,
+  adapter: 'fetch' as any,
+  baseURL: '',
   timeout: 120000,
   headers: { 'Content-Type': 'application/json' }
 })
 
 export const aiHttpClient = new HttpClient({
-  baseURL: BASE_URL,
+  adapter: 'fetch' as any,
+  baseURL: '',
   timeout: 300000,
   headers: { 'Content-Type': 'application/json' }
 })
