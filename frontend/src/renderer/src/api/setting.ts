@@ -70,8 +70,8 @@ export async function copyLLMConfig(id: number): Promise<LLMConfigRead> {
 
 // --- 提示词 API ---
 export interface Prompt { id: number; name: string; description: string; template: string; built_in?: boolean }
-export async function listPrompts(): Promise<Prompt[]> { return await request.get<Prompt[]>('/prompts') }
-export async function createPrompt(body: Partial<Prompt>): Promise<void> { await request.post('/prompts', body) }
+export async function listPrompts(): Promise<Prompt[]> { return await request.get<Prompt[]>('/prompts/') }
+export async function createPrompt(body: Partial<Prompt>): Promise<void> { await request.post('/prompts/', body) }
 export async function updatePrompt(id: number, body: Partial<Prompt>): Promise<void> { await request.put(`/prompts/${id}`, body) }
 export async function deletePrompt(id: number): Promise<void> { await request.delete(`/prompts/${id}`) }
 

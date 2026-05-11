@@ -154,6 +154,15 @@ class ForeshadowItem(SQLModel, table=True):
     resolved_at: Optional[datetime] = None
 
 
+class AssistantConversation(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    title: str = Field(default="新对话")
+    created_at: int = Field(default=0, index=True)
+    updated_at: int = Field(default=0, index=True)
+    messages: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+
+
 # 知识库模型
 class Knowledge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

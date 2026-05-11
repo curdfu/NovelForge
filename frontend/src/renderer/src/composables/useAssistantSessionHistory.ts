@@ -1,6 +1,7 @@
 import { ref, watch, type Ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+import { deleteAssistantSession, listAssistantSessions, saveAssistantSession } from '@renderer/api/ai'
 import type { AssistantChatSession, AssistantPanelMessage } from '@renderer/types/assistantPanel'
 
 interface UseAssistantSessionHistoryOptions {
@@ -42,6 +43,10 @@ function dedupeSessionsById(sessions: AssistantChatSession[]): AssistantChatSess
   return result
 }
 
+function sortSessions(sessions: AssistantChatSession[]): AssistantChatSession[] {
+  return dedupeSessionsById(sessions).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 export function useAssistantSessionHistory(options: UseAssistantSessionHistoryOptions) {
   const currentSession = options.currentSession ?? ref<AssistantChatSession>(createEmptySession(options.projectId.value || 0))
   const historySessions = options.historySessions ?? ref<AssistantChatSession[]>([])
@@ -68,48 +73,70 @@ export function useAssistantSessionHistory(options: UseAssistantSessionHistoryOp
     }
   }
 
-  function loadHistorySessions(projectId: number): void {
+  function readLocalHistorySessions(projectId: number): AssistantChatSession[] {
     try {
       const key = getSessionStorageKey(projectId)
       const stored = localStorage.getItem(key)
       if (!stored) {
-        historySessions.value = []
-        return
+        return []
       }
-      const sessions = dedupeSessionsById(JSON.parse(stored) as AssistantChatSession[])
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-      historySessions.value = sessions
+      const sessions = sortSessions(JSON.parse(stored) as AssistantChatSession[])
       localStorage.setItem(key, JSON.stringify(sessions))
+      return sessions
     } catch {
-      historySessions.value = []
+      return []
     }
   }
 
-  function saveCurrentSession(): void {
+  function writeLocalHistorySessions(projectId: number, sessions: AssistantChatSession[]): void {
+    try {
+      localStorage.setItem(getSessionStorageKey(projectId), JSON.stringify(sortSessions(sessions)))
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  async function loadHistorySessions(projectId: number): Promise<void> {
+    try {
+      const remoteSessions = sortSessions(await listAssistantSessions(projectId))
+      if (remoteSessions.length > 0) {
+        historySessions.value = remoteSessions
+        writeLocalHistorySessions(projectId, remoteSessions)
+        return
+      }
+
+      const localSessions = readLocalHistorySessions(projectId)
+      historySessions.value = localSessions
+      await Promise.all(localSessions.map(item => saveAssistantSession(item).catch(() => null)))
+    } catch {
+      historySessions.value = readLocalHistorySessions(projectId)
+    }
+  }
+
+  async function saveCurrentSession(): Promise<void> {
     const projectId = options.projectId.value
     if (!projectId) return
     if (options.messages.value.length === 0) return
 
+    const sessionToSave: AssistantChatSession = {
+      ...currentSession.value,
+      messages: JSON.parse(JSON.stringify(options.messages.value)),
+      updatedAt: Date.now(),
+      projectId,
+    }
+
+    if (sessionToSave.title === '新对话') {
+      const firstUserMessage = options.messages.value.find(item => item.role === 'user')
+      if (firstUserMessage) {
+        sessionToSave.title =
+          firstUserMessage.content.substring(0, 20) +
+          (firstUserMessage.content.length > 20 ? '...' : '')
+      }
+    }
+
     try {
-      const sessionToSave: AssistantChatSession = {
-        ...currentSession.value,
-        messages: JSON.parse(JSON.stringify(options.messages.value)),
-        updatedAt: Date.now(),
-        projectId,
-      }
-
-      if (sessionToSave.title === '新对话') {
-        const firstUserMessage = options.messages.value.find(item => item.role === 'user')
-        if (firstUserMessage) {
-          sessionToSave.title =
-            firstUserMessage.content.substring(0, 20) +
-            (firstUserMessage.content.length > 20 ? '...' : '')
-        }
-      }
-
-      const key = getSessionStorageKey(projectId)
-      const stored = localStorage.getItem(key)
-      const sessions = dedupeSessionsById(stored ? (JSON.parse(stored) as AssistantChatSession[]) : []).filter(
+      await saveAssistantSession(sessionToSave)
+      const sessions = sortSessions(historySessions.value).filter(
         session => session.id !== sessionToSave.id,
       )
       sessions.unshift(sessionToSave)
@@ -118,7 +145,7 @@ export function useAssistantSessionHistory(options: UseAssistantSessionHistoryOp
         sessions.splice(50)
       }
 
-      localStorage.setItem(key, JSON.stringify(sessions))
+      writeLocalHistorySessions(projectId, sessions)
       historySessions.value = sessions
       writeActiveSessionId(projectId, sessionToSave.id)
 
@@ -126,7 +153,11 @@ export function useAssistantSessionHistory(options: UseAssistantSessionHistoryOp
         currentSession.value.title = sessionToSave.title
       }
     } catch {
-      // keep current UI state on localStorage failure
+      const sessions = readLocalHistorySessions(projectId).filter(session => session.id !== sessionToSave.id)
+      sessions.unshift(sessionToSave)
+      writeLocalHistorySessions(projectId, sessions.slice(0, 50))
+      historySessions.value = sessions.slice(0, 50)
+      writeActiveSessionId(projectId, sessionToSave.id)
     }
   }
 
@@ -162,14 +193,14 @@ export function useAssistantSessionHistory(options: UseAssistantSessionHistoryOp
     }
   }
 
-  function deleteSession(sessionId: string): void {
+  async function deleteSession(sessionId: string): Promise<void> {
     const projectId = options.projectId.value
     if (!projectId) return
 
     try {
-      const key = getSessionStorageKey(projectId)
+      await deleteAssistantSession(projectId, sessionId)
       historySessions.value = historySessions.value.filter(item => item.id !== sessionId)
-      localStorage.setItem(key, JSON.stringify(historySessions.value))
+      writeLocalHistorySessions(projectId, historySessions.value)
 
       if (currentSession.value.id === sessionId) {
         const fallback = historySessions.value[0]
@@ -222,11 +253,15 @@ export function useAssistantSessionHistory(options: UseAssistantSessionHistoryOp
     return `${date.getMonth() + 1}/${date.getDate()}`
   }
 
+  let loadToken = 0
+
   watch(
     () => options.projectId.value,
-    newProjectId => {
+    async newProjectId => {
       if (!newProjectId) return
-      loadHistorySessions(newProjectId)
+      const token = ++loadToken
+      await loadHistorySessions(newProjectId)
+      if (token !== loadToken) return
       if (historySessions.value.length > 0) {
         const activeSessionId = readActiveSessionId(newProjectId)
         const targetSession = activeSessionId

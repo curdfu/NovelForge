@@ -1,6 +1,7 @@
 import { aiHttpClient, API_BASE_URL } from './request'
 import { createSSEStreamingRequest } from './streaming'
 import type { components } from '@renderer/types/generated'
+import type { AssistantChatSession } from '@renderer/types/assistantPanel'
 
 export type GeneralAIRequest = components['schemas']['GeneralAIRequest']
 export type ContinuationRequest = components['schemas']['ContinuationRequest']
@@ -84,6 +85,19 @@ export type AssembleContextResponse = Omit<AssembleContextResponseBase, 'facts_s
 
 export function renderPromptWithKnowledge(name: string): Promise<{ text: string }> {
   return aiHttpClient.get<{ text: string }>(`/ai/prompts/render?name=${encodeURIComponent(name)}`)
+}
+
+export function listAssistantSessions(projectId: number): Promise<AssistantChatSession[]> {
+  return aiHttpClient.get<AssistantChatSession[]>(`/ai/assistant/sessions?project_id=${projectId}`, undefined, '/api', { showLoading: false })
+}
+
+export function saveAssistantSession(session: AssistantChatSession): Promise<AssistantChatSession> {
+  return aiHttpClient.put<AssistantChatSession>(`/ai/assistant/sessions/${encodeURIComponent(session.id)}`, session, '/api', { showLoading: false })
+}
+
+export function deleteAssistantSession(projectId: number, sessionId: string): Promise<{ success: boolean }> {
+  const qs = new URLSearchParams({ project_id: String(projectId) })
+  return aiHttpClient.delete<{ success: boolean }>(`/ai/assistant/sessions/${encodeURIComponent(sessionId)}?${qs.toString()}`, undefined, '/api', { showLoading: false })
 }
 
 export function assembleContext(body: AssembleContextRequest): Promise<AssembleContextResponse> {

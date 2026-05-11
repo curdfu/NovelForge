@@ -40,6 +40,7 @@ docs/
 # IDE配置
 .vscode/
 .idea/
+.vs/
 *.swp
 *.swo
 *~
